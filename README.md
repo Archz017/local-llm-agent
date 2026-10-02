@@ -43,9 +43,9 @@ An open-source local LLM agent runtime exploring:
    │ • filesystem        │                    │ GGUF quantization    │
    │ • web/search*       │                    │                      │
    │ • system info       │                    │ GPU / CPU inference  │
-   │ • database          │                    │ KV cache              │
-   └─────────────────────┘                    │ batching              │
-                                              │ speculative decoding  │
+   │ • database          │                    │ KV cache             │
+   └─────────────────────┘                    │ batching             │
+                                              │ speculative decoding │
                                               └──────────────────────┘
 
                          ┌─────────────────────────┐
