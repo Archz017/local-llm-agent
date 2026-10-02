@@ -1,0 +1,29 @@
+[project]
+name = "local-llm-agent"
+version = "0.1.0"
+description = "Open-source local LLM agent runtime with MCP and efficient tool execution"
+readme = "README.md"
+authors = [
+    { name = "Archz017", email = "archit17029@iiitd.ac.in" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28",
+    "pydantic>=2.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
+    "ruff>=0.11",
+]
+
+[project.scripts]
+local-llm-agent = "local_llm_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
