@@ -29,24 +29,24 @@ An open-source local LLM agent runtime exploring:
                          │ • MCP client            │
                          │ • async executor        │
                          │ • response synthesizer  │
-                         └───────┬──┬──────────────┘
-                                 │  │
-                    MCP          │  │ OpenAI-compatible API
-                                 │  │
-              ┌──────────────────┘  └──────────────┐
-              ▼                                    ▼
-   ┌─────────────────────┐               ┌──────────────────────┐
-   │     MCP Server      │               │    llama.cpp         │
-   │       Python        │               │    LLM Server        │
-   │                     │               │                      │
-   │ • calculator        │               │ Qwen 3.x / similar   │
-   │ • filesystem        │               │ GGUF quantization    │
-   │ • web/search*       │               │                      │
-   │ • system info       │               │ GPU / CPU inference  │
-   │ • database          │               │ KV cache             │
-   └─────────────────────┘               │ batching             │
-                                         │ speculative decoding │
-                                         └──────────────────────┘
+                         └───────┬─────────┬───────┘
+                                 │         │
+                    MCP          │         │ OpenAI-compatible API
+                                 │         │
+              ┌──────────────────┘         └──────────────┐
+              ▼                                           ▼
+   ┌─────────────────────┐                    ┌──────────────────────┐
+   │     MCP Server      │                    │    llama.cpp         │
+   │       Python        │                    │    LLM Server        │
+   │                     │                    │                      │
+   │ • calculator        │                    │ Qwen 3.x / similar   │
+   │ • filesystem        │                    │ GGUF quantization    │
+   │ • web/search*       │                    │                      │
+   │ • system info       │                    │ GPU / CPU inference  │
+   │ • database          │                    │ KV cache              │
+   └─────────────────────┘                    │ batching              │
+                                              │ speculative decoding  │
+                                              └──────────────────────┘
 
                          ┌─────────────────────────┐
                          │     Observability       │
