@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*.so
+
+.venv/
+.uv/
+
+.vscode/
+.idea/
+.DS_Store
+
+.env
+.env.*
+
+# Model files
+models/*
+!models/.gitkeep
+
+*.log
+
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+benchmarks/results/
+data/
