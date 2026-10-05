@@ -14,16 +14,25 @@ class LLMClient:
 
     async def chat(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
         temperature: float = 0.2,
         max_tokens: int = 512,
     ) -> dict[str, Any]:
-        payload = {
+
+        payload: dict[str, Any] = {
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+
+        if tools:
+            payload["tools"] = tools
+
+        if tool_choice:
+            payload["tool_choice"] = tool_choice
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
@@ -32,4 +41,5 @@ class LLMClient:
             )
 
         response.raise_for_status()
+
         return response.json()

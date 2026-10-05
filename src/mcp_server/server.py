@@ -3,7 +3,6 @@ from mcp.server import MCPServer
 from mcp_server.tools.calculator import add, multiply
 from mcp_server.tools.system_info import get_system_info
 
-
 mcp = MCPServer(
     name="local-llm-tools",
     instructions=(
@@ -29,3 +28,6 @@ def calculator_multiply(a: float, b: float) -> float:
 def system_info() -> dict[str, str]:
     """Return information about the machine running this MCP server."""
     return get_system_info()
+
+if __name__ == "__main__":
+    mcp.run()
