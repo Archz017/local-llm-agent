@@ -12,12 +12,8 @@ def parse_tool_arguments(arguments: Any) -> dict[str, Any]:
         parsed = json.loads(arguments)
 
         if not isinstance(parsed, dict):
-            raise TypeError(
-                "Tool arguments must decode to a JSON object."
-            )
+            raise TypeError("Tool arguments must decode to a JSON object.")
 
         return parsed
 
-    raise TypeError(
-        f"Unsupported tool argument type: {type(arguments).__name__}"
-    )
+    raise TypeError(f"Unsupported tool argument type: {type(arguments).__name__}")

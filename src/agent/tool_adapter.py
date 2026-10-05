@@ -28,7 +28,4 @@ def mcp_tool_to_openai(tool: Any) -> dict[str, Any]:
 def mcp_tools_to_openai(
     tools: list[Any],
 ) -> list[dict[str, Any]]:
-    return [
-        mcp_tool_to_openai(tool)
-        for tool in tools
-    ]
+    return [mcp_tool_to_openai(tool) for tool in tools]

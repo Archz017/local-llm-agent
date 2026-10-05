@@ -1,6 +1,7 @@
 from mcp.server import MCPServer
 
 from mcp_server.tools.calculator import add, multiply
+from mcp_server.tools.delay import delay
 from mcp_server.tools.system_info import get_system_info
 
 mcp = MCPServer(
@@ -28,6 +29,19 @@ def calculator_multiply(a: float, b: float) -> float:
 def system_info() -> dict[str, str]:
     """Return information about the machine running this MCP server."""
     return get_system_info()
+
+
+@mcp.tool()
+async def wait(
+    seconds: float,
+    label: str,
+) -> dict[str, str | float]:
+    """Wait for a specified number of seconds.
+
+    Useful for testing concurrent tool execution.
+    """
+    return await delay(seconds, label)
+
 
 if __name__ == "__main__":
     mcp.run()

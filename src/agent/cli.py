@@ -6,33 +6,30 @@ from mcp_client.client import MCPClient
 
 
 async def main() -> None:
-    runtime = AgentRuntime(
-        llm_client=LLMClient(),
-        mcp_client=MCPClient(),
-    )
+    async with MCPClient() as mcp_client:
+        runtime = AgentRuntime(
+            llm_client=LLMClient(),
+            mcp_client=mcp_client,
+        )
 
-    print("Local LLM Agent")
-    print("Type 'exit' to quit.\n")
+        print("Local LLM Agent")
+        print("Type 'exit' to quit.\n")
 
-    while True:
-        user_input = input("You: ").strip()
+        while True:
+            user_input = input("You: ").strip()
 
-        if user_input.lower() in {
-            "exit",
-            "quit",
-        }:
-            break
+            if user_input.lower() in {
+                "exit",
+                "quit",
+            }:
+                break
 
-        if not user_input:
-            continue
+            if not user_input:
+                continue
 
-        # try:
-        answer = await runtime.run(user_input)
+            answer = await runtime.run(user_input)
 
-        print(f"\nAgent: {answer}\n")
-
-        # except Exception as exc:
-        #     print(f"\nError: {exc}\n")
+            print(f"\nAgent: {answer}\n")
 
 
 if __name__ == "__main__":

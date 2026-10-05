@@ -6,9 +6,8 @@ from mcp_client.client import MCPClient
 
 
 async def main() -> None:
-    client = MCPClient()
-
-    tools = await client.list_tools()
+    async with MCPClient() as client:
+        tools = await client.list_tools()
 
     llm_tools = mcp_tools_to_openai(tools)
 

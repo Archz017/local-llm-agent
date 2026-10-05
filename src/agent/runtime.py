@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 from agent.tool_adapter import mcp_tools_to_openai
-from agent.tool_parser import parse_tool_arguments
+from agent.tool_executor import ToolExecutor
 from llm.client import LLMClient
 from mcp_client.client import MCPClient
 
@@ -13,10 +13,13 @@ class AgentRuntime:
         llm_client: LLMClient,
         mcp_client: MCPClient,
         max_tool_rounds: int = 5,
+        parallel_tools: bool = True,
     ) -> None:
         self.llm = llm_client
         self.mcp = mcp_client
+        self.executor = ToolExecutor(mcp_client)
         self.max_tool_rounds = max_tool_rounds
+        self.parallel_tools = parallel_tools
 
     async def run(self, user_message: str) -> str:
         mcp_tools = await self.mcp.list_tools()
@@ -55,37 +58,30 @@ class AgentRuntime:
             messages.append(message)
 
             for tool_call in tool_calls:
-                function = tool_call["function"]
+                if self.parallel_tools:
+                    execution_results = await self.executor.execute_parallel(tool_calls)
+                else:
+                    execution_results = await self.executor.execute_sequential(
+                        tool_calls
+                    )
 
-                tool_name = function["name"]
+                for execution in execution_results:
+                    print(
+                        f"[tool] {execution.tool_name} "
+                        f"completed in {execution.duration_ms:.2f} ms"
+                    )
 
-                arguments = parse_tool_arguments(
-                    function.get("arguments", {})
-                )
+                    tool_result = self._serialize_tool_result(execution.result)
 
-                print(
-                    f"\n[tool] {tool_name}"
-                    f"({json.dumps(arguments)})"
-                )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": execution.tool_call_id,
+                            "content": tool_result,
+                        }
+                    )
 
-                result = await self.mcp.call_tool(
-                    tool_name,
-                    arguments,
-                )
-
-                tool_result = self._serialize_tool_result(result)
-
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call["id"],
-                        "content": tool_result,
-                    }
-                )
-
-        raise RuntimeError(
-            f"Maximum tool rounds ({self.max_tool_rounds}) exceeded."
-        )
+        raise RuntimeError(f"Maximum tool rounds ({self.max_tool_rounds}) exceeded.")
 
     @staticmethod
     def _serialize_tool_result(result: Any) -> str:
