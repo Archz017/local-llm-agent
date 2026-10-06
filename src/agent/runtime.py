@@ -6,6 +6,21 @@ from agent.tool_executor import ToolExecutor
 from llm.client import LLMClient
 from mcp_client.client import MCPClient
 
+SYSTEM_PROMPT = """
+You are a helpful AI assistant with access to tools.
+
+Answer general questions and conversational requests normally.
+Use the conversation history to understand follow-up questions.
+
+Do not claim that the user previously provided information unless
+that information appears in the current conversation history. If a
+question depends on missing conversation context, say that the
+information was not provided.
+
+Use tools when they are useful or necessary to answer the user's
+request. Otherwise, answer directly.
+""".strip()
+
 
 class AgentRuntime:
     def __init__(
@@ -21,28 +36,24 @@ class AgentRuntime:
         self.max_tool_rounds = max_tool_rounds
         self.parallel_tools = parallel_tools
 
-    async def run(self, user_message: str) -> str:
+    async def run(
+        self,
+        messages: list[dict[str, object]],
+    ) -> str:
+        llm_messages = [
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT,
+            },
+            *messages,
+        ]
+
         mcp_tools = await self.mcp.list_tools()
         tools = mcp_tools_to_openai(mcp_tools)
 
-        messages: list[dict[str, Any]] = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a local AI assistant. "
-                    "Use tools when they are useful. "
-                    "Do not invent tool results."
-                ),
-            },
-            {
-                "role": "user",
-                "content": user_message,
-            },
-        ]
-
         for _ in range(self.max_tool_rounds):
             response = await self.llm.chat(
-                messages,
+                llm_messages,
                 tools=tools,
                 tool_choice="auto",
                 temperature=0.1,
@@ -55,31 +66,29 @@ class AgentRuntime:
             if not tool_calls:
                 return message.get("content", "")
 
-            messages.append(message)
+            llm_messages.append(message)
 
-            for tool_call in tool_calls:
-                if self.parallel_tools:
-                    execution_results = await self.executor.execute_parallel(tool_calls)
-                else:
-                    execution_results = await self.executor.execute_sequential(
-                        tool_calls
-                    )
+            if self.parallel_tools:
+                execution_results = await self.executor.execute_parallel(tool_calls)
+            else:
+                execution_results = await self.executor.execute_sequential(tool_calls)
 
-                for execution in execution_results:
-                    print(
-                        f"[tool] {execution.tool_name} "
-                        f"completed in {execution.duration_ms:.2f} ms"
-                    )
+            for execution in execution_results:
+                print(
+                    f"[tool] {execution.tool_name} "
+                    f"completed in "
+                    f"{execution.duration_ms:.2f} ms"
+                )
 
-                    tool_result = self._serialize_tool_result(execution.result)
+                tool_result = self._serialize_tool_result(execution.result)
 
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": execution.tool_call_id,
-                            "content": tool_result,
-                        }
-                    )
+                llm_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": execution.tool_call_id,
+                        "content": tool_result,
+                    }
+                )
 
         raise RuntimeError(f"Maximum tool rounds ({self.max_tool_rounds}) exceeded.")
 

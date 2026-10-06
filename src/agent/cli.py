@@ -15,21 +15,32 @@ async def main() -> None:
         print("Local LLM Agent")
         print("Type 'exit' to quit.\n")
 
+        messages: list[dict[str, object]] = []
+
         while True:
-            user_input = input("You: ").strip()
+            user_input = input("You: ")
 
-            if user_input.lower() in {
-                "exit",
-                "quit",
-            }:
-                break
+            messages.append(
+                {
+                    "role": "user",
+                    "content": user_input,
+                }
+            )
 
-            if not user_input:
-                continue
+            try:
+                answer = await runtime.run(messages)
+            except Exception:
+                messages.pop()
+                raise
 
-            answer = await runtime.run(user_input)
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": answer,
+                }
+            )
 
-            print(f"\nAgent: {answer}\n")
+            print(f"Assistant: {answer}")
 
 
 if __name__ == "__main__":
