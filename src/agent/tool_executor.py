@@ -7,6 +7,10 @@ from mcp.types import CallToolResult
 
 from agent.tool_parser import parse_tool_arguments
 from mcp_client.client import MCPClient
+from observability.metrics import (
+    TOOL_EXECUTION_DURATION_SECONDS,
+    TOOL_EXECUTIONS_TOTAL,
+)
 
 
 @dataclass
@@ -46,7 +50,18 @@ class ToolExecutor:
                 arguments,
             )
 
-        duration_ms = (time.perf_counter() - start) * 1000
+        duration_seconds = time.perf_counter() - start
+
+        TOOL_EXECUTION_DURATION_SECONDS.labels(
+            tool_name=tool_name,
+        ).observe(duration_seconds)
+
+        outcome = "error" if result.is_error else "success"
+
+        TOOL_EXECUTIONS_TOTAL.labels(
+            tool_name=tool_name,
+            outcome=outcome,
+        ).inc()
 
         if result.is_error:
             return ToolExecutionResult(
@@ -54,7 +69,7 @@ class ToolExecutor:
                 tool_name=tool_name,
                 arguments=arguments,
                 result=result,
-                duration_ms=duration_ms,
+                duration_ms=duration_seconds * 1000,
                 error="MCP tool reported an execution error.",
             )
 
@@ -63,7 +78,7 @@ class ToolExecutor:
             tool_name=tool_name,
             arguments=arguments,
             result=result,
-            duration_ms=duration_ms,
+            duration_ms=duration_seconds * 1000,
         )
 
     async def execute_sequential(

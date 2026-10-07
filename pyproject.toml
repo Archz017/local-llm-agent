@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
     "mcp[cli]>=2.2.0",
+    "prometheus-client>=0.26.0",
 ]
 
 [dependency-groups]

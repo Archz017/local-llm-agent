@@ -8,6 +8,12 @@ from agent.tool_adapter import mcp_tools_to_openai
 from agent.tool_executor import ToolExecutor
 from llm.client import LLMClient
 from mcp_client.client import MCPClient
+from observability.metrics import (
+    AGENT_EXECUTION_DURATION_SECONDS,
+    AGENT_EXECUTIONS_TOTAL,
+    AGENT_LLM_ROUNDS,
+    AGENT_TOOL_CALLS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,24 +47,26 @@ class AgentRuntime:
         self.max_tool_rounds = max_tool_rounds
         self.parallel_tools = parallel_tools
 
-    async def run(
-        self,
-        messages: list[dict[str, object]],
-    ) -> str:
+    async def run(self, messages: list[dict[str, object]]) -> str:
         start = time.perf_counter()
 
         logger.info(
             "Agent execution started",
-            extra={
-                "event": "agent_started",
-            },
+            extra={"event": "agent_started"},
         )
 
         try:
             answer = await self._run_agent_loop(messages)
 
         except Exception as exc:
-            duration_ms = (time.perf_counter() - start) * 1000
+            duration_seconds = time.perf_counter() - start
+            duration_ms = duration_seconds * 1000
+
+            AGENT_EXECUTIONS_TOTAL.labels(
+                outcome="error",
+            ).inc()
+
+            AGENT_EXECUTION_DURATION_SECONDS.observe(duration_seconds)
 
             logger.exception(
                 "Agent execution failed",
@@ -68,10 +76,16 @@ class AgentRuntime:
                     "error_type": type(exc).__name__,
                 },
             )
-
             raise
 
-        duration_ms = (time.perf_counter() - start) * 1000
+        duration_seconds = time.perf_counter() - start
+        duration_ms = duration_seconds * 1000
+
+        AGENT_EXECUTIONS_TOTAL.labels(
+            outcome="success",
+        ).inc()
+
+        AGENT_EXECUTION_DURATION_SECONDS.observe(duration_seconds)
 
         logger.info(
             "Agent execution completed",
@@ -87,6 +101,7 @@ class AgentRuntime:
         self,
         messages: list[dict[str, object]],
     ) -> str:
+        tool_call_count = 0
         llm_messages = [
             {
                 "role": "system",
@@ -117,6 +132,7 @@ class AgentRuntime:
                 return message.get("content") or ""
 
             llm_messages.append(message)
+            tool_call_count += len(tool_calls)
 
             if self.parallel_tools:
                 execution_results = await self.executor.execute_parallel(tool_calls)
@@ -163,6 +179,9 @@ class AgentRuntime:
                         "content": tool_result,
                     }
                 )
+
+                AGENT_LLM_ROUNDS.observe(llm_round)
+                AGENT_TOOL_CALLS.observe(tool_call_count)
 
         raise MaxToolRoundsError(
             f"Maximum tool rounds ({self.max_tool_rounds}) exceeded."

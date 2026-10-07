@@ -5,6 +5,8 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from starlette.responses import Response
 
 from agent.errors import (
     LLMError,
@@ -21,6 +23,11 @@ from observability.context import (
     set_session_id,
 )
 from observability.logging import configure_logging
+from observability.metrics import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_IN_PROGRESS,
+    HTTP_REQUESTS_TOTAL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +94,8 @@ async def request_id_middleware(
     token = set_request_id(request_id)
     start = time.perf_counter()
 
+    HTTP_REQUESTS_IN_PROGRESS.inc()
+
     try:
         logger.info(
             "HTTP request started",
@@ -97,7 +106,22 @@ async def request_id_middleware(
 
         response = await call_next(request)
 
-        duration_ms = (time.perf_counter() - start) * 1000
+        duration_seconds = time.perf_counter() - start
+        duration_ms = duration_seconds * 1000
+
+        route = request.scope.get("route")
+        route_path = route.path if route is not None else "unmatched"
+
+        HTTP_REQUESTS_TOTAL.labels(
+            method=request.method,
+            route=route_path,
+            status_code=str(response.status_code),
+        ).inc()
+
+        HTTP_REQUEST_DURATION_SECONDS.labels(
+            method=request.method,
+            route=route_path,
+        ).observe(duration_seconds)
 
         logger.info(
             "HTTP request completed",
@@ -113,7 +137,22 @@ async def request_id_middleware(
         return response
 
     except Exception as exc:
-        duration_ms = (time.perf_counter() - start) * 1000
+        duration_seconds = time.perf_counter() - start
+        duration_ms = duration_seconds * 1000
+
+        route = request.scope.get("route")
+        route_path = route.path if route is not None else "unmatched"
+
+        HTTP_REQUESTS_TOTAL.labels(
+            method=request.method,
+            route=route_path,
+            status_code="500",
+        ).inc()
+
+        HTTP_REQUEST_DURATION_SECONDS.labels(
+            method=request.method,
+            route=route_path,
+        ).observe(duration_seconds)
 
         logger.exception(
             "HTTP request failed",
@@ -127,7 +166,16 @@ async def request_id_middleware(
         raise
 
     finally:
+        HTTP_REQUESTS_IN_PROGRESS.dec()
         reset_request_id(token)
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics() -> Response:
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
 
 
 @app.post(

@@ -5,6 +5,11 @@ from typing import Any
 import httpx
 
 from agent.errors import LLMError, LLMTimeoutError
+from observability.metrics import (
+    LLM_REQUEST_DURATION_SECONDS,
+    LLM_REQUESTS_TOTAL,
+    LLM_TOKENS_TOTAL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,61 +78,72 @@ class LLMClient:
             response.raise_for_status()
 
         except httpx.TimeoutException as exc:
-            duration_ms = (time.perf_counter() - start) * 1000
+            duration_seconds = time.perf_counter() - start
 
-            logger.exception(
-                "LLM request timed out",
-                extra={
-                    "event": "llm_request_failed",
-                    "duration_ms": round(duration_ms, 2),
-                    "error_type": type(exc).__name__,
-                    "llm_round": llm_round,
-                },
-            )
+            LLM_REQUESTS_TOTAL.labels(
+                outcome="timeout",
+            ).inc()
+
+            LLM_REQUEST_DURATION_SECONDS.observe(duration_seconds)
 
             raise LLMTimeoutError("LLM request timed out.") from exc
 
         except httpx.HTTPStatusError as exc:
-            duration_ms = (time.perf_counter() - start) * 1000
+            duration_seconds = time.perf_counter() - start
 
-            logger.exception(
-                "LLM returned an error response",
-                extra={
-                    "event": "llm_request_failed",
-                    "duration_ms": round(duration_ms, 2),
-                    "status_code": exc.response.status_code,
-                    "error_type": type(exc).__name__,
-                    "llm_round": llm_round,
-                },
-            )
+            LLM_REQUESTS_TOTAL.labels(
+                outcome="http_error",
+            ).inc()
+
+            LLM_REQUEST_DURATION_SECONDS.observe(duration_seconds)
 
             raise LLMError(f"LLM returned HTTP {exc.response.status_code}.") from exc
 
         except httpx.RequestError as exc:
-            duration_ms = (time.perf_counter() - start) * 1000
+            duration_seconds = time.perf_counter() - start
 
-            logger.exception(
-                "LLM connection failed",
-                extra={
-                    "event": "llm_request_failed",
-                    "duration_ms": round(duration_ms, 2),
-                    "error_type": type(exc).__name__,
-                    "llm_round": llm_round,
-                },
-            )
+            LLM_REQUESTS_TOTAL.labels(
+                outcome="connection_error",
+            ).inc()
+
+            LLM_REQUEST_DURATION_SECONDS.observe(duration_seconds)
 
             raise LLMError("Unable to communicate with the LLM.") from exc
 
-        duration_ms = (time.perf_counter() - start) * 1000
+        data = response.json()
+
+        duration_seconds = time.perf_counter() - start
+        duration_ms = duration_seconds * 1000
+
+        LLM_REQUESTS_TOTAL.labels(
+            outcome="success",
+        ).inc()
+
+        LLM_REQUEST_DURATION_SECONDS.observe(duration_seconds)
+
+        usage = data.get("usage")
+
+        if isinstance(usage, dict):
+            prompt_tokens = usage.get("prompt_tokens")
+            completion_tokens = usage.get("completion_tokens")
+
+            if isinstance(prompt_tokens, int):
+                LLM_TOKENS_TOTAL.labels(
+                    type="prompt",
+                ).inc(prompt_tokens)
+
+            if isinstance(completion_tokens, int):
+                LLM_TOKENS_TOTAL.labels(
+                    type="completion",
+                ).inc(completion_tokens)
 
         logger.info(
             "LLM request completed",
             extra={
                 "event": "llm_request_completed",
-                "duration_ms": round(duration_ms, 2),
-                "status_code": response.status_code,
                 "llm_round": llm_round,
+                "duration_ms": round(duration_ms, 2),
             },
         )
 
-        return response.json()
+        return data
