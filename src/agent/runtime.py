@@ -1,10 +1,14 @@
 import json
+import logging
+import time
 from typing import Any
 
 from agent.tool_adapter import mcp_tools_to_openai
 from agent.tool_executor import ToolExecutor
 from llm.client import LLMClient
 from mcp_client.client import MCPClient
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """
 You are a helpful AI assistant with access to tools.
@@ -40,6 +44,48 @@ class AgentRuntime:
         self,
         messages: list[dict[str, object]],
     ) -> str:
+        start = time.perf_counter()
+
+        logger.info(
+            "Agent execution started",
+            extra={
+                "event": "agent_started",
+            },
+        )
+
+        try:
+            answer = await self._run_agent_loop(messages)
+
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - start) * 1000
+
+            logger.exception(
+                "Agent execution failed",
+                extra={
+                    "event": "agent_failed",
+                    "duration_ms": round(duration_ms, 2),
+                    "error_type": type(exc).__name__,
+                },
+            )
+
+            raise
+
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        logger.info(
+            "Agent execution completed",
+            extra={
+                "event": "agent_completed",
+                "duration_ms": round(duration_ms, 2),
+            },
+        )
+
+        return answer
+
+    async def _run_agent_loop(
+        self,
+        messages: list[dict[str, object]],
+    ) -> str:
         llm_messages = [
             {
                 "role": "system",
@@ -51,20 +97,23 @@ class AgentRuntime:
         mcp_tools = await self.mcp.list_tools()
         tools = mcp_tools_to_openai(mcp_tools)
 
-        for _ in range(self.max_tool_rounds):
+        for llm_round in range(
+            1,
+            self.max_tool_rounds + 1,
+        ):
             response = await self.llm.chat(
                 llm_messages,
                 tools=tools,
                 tool_choice="auto",
                 temperature=0.1,
+                llm_round=llm_round,
             )
 
             message = response["choices"][0]["message"]
-
             tool_calls = message.get("tool_calls") or []
 
             if not tool_calls:
-                return message.get("content", "")
+                return message.get("content") or ""
 
             llm_messages.append(message)
 
@@ -74,10 +123,17 @@ class AgentRuntime:
                 execution_results = await self.executor.execute_sequential(tool_calls)
 
             for execution in execution_results:
-                print(
-                    f"[tool] {execution.tool_name} "
-                    f"completed in "
-                    f"{execution.duration_ms:.2f} ms"
+                logger.info(
+                    "Tool execution completed",
+                    extra={
+                        "event": "tool_completed",
+                        "tool_name": execution.tool_name,
+                        "tool_call_id": execution.tool_call_id,
+                        "duration_ms": round(
+                            execution.duration_ms,
+                            2,
+                        ),
+                    },
                 )
 
                 tool_result = self._serialize_tool_result(execution.result)

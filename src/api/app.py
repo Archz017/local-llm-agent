@@ -1,20 +1,28 @@
-from collections.abc import AsyncIterator
+import logging
+import time
 from contextlib import asynccontextmanager
-from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 
 from api.dependencies import ApplicationServices
 from api.schemas import ChatRequest, ChatResponse, CreateSessionResponse
+from observability.context import (
+    reset_request_id,
+    reset_session_id,
+    set_request_id,
+    set_session_id,
+)
+from observability.logging import configure_logging
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(
-    app: FastAPI,
-) -> AsyncIterator[None]:
-    services = ApplicationServices()
+async def lifespan(app: FastAPI):
+    configure_logging()
 
+    services = ApplicationServices()
     await services.start()
 
     app.state.services = services
@@ -42,17 +50,55 @@ async def health() -> dict[str, str]:
 @app.middleware("http")
 async def request_id_middleware(
     request: Request,
-    call_next: Any,
-) -> Any:
+    call_next,
+):
     request_id = str(uuid4())
-
     request.state.request_id = request_id
 
-    response = await call_next(request)
+    token = set_request_id(request_id)
+    start = time.perf_counter()
 
-    response.headers["X-Request-ID"] = request_id
+    try:
+        logger.info(
+            "HTTP request started",
+            extra={
+                "event": "http_request_started",
+            },
+        )
 
-    return response
+        response = await call_next(request)
+
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        logger.info(
+            "HTTP request completed",
+            extra={
+                "event": "http_request_completed",
+                "duration_ms": round(duration_ms, 2),
+                "status_code": response.status_code,
+            },
+        )
+
+        response.headers["X-Request-ID"] = request_id
+
+        return response
+
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        logger.exception(
+            "HTTP request failed",
+            extra={
+                "event": "http_request_failed",
+                "duration_ms": round(duration_ms, 2),
+                "error_type": type(exc).__name__,
+            },
+        )
+
+        raise
+
+    finally:
+        reset_request_id(token)
 
 
 @app.post(
@@ -75,32 +121,33 @@ async def chat(
 
     runtime = services.get_runtime()
 
-    async with session.lock:
-        original_length = len(session.messages)
+    session_token = set_session_id(session.session_id)
 
-        session.messages.append(
-            {
-                "role": "user",
-                "content": payload.message,
-            }
-        )
+    try:
+        async with session.lock:
+            original_length = len(session.messages)
 
-        try:
-            answer = await runtime.run(session.messages)
-        except Exception as exc:
-            del session.messages[original_length:]
+            session.messages.append(
+                {
+                    "role": "user",
+                    "content": payload.message,
+                }
+            )
 
-            raise HTTPException(
-                status_code=500,
-                detail="Agent execution failed.",
-            ) from exc
+            try:
+                answer = await runtime.run(session.messages)
+            except Exception:
+                del session.messages[original_length:]
+                raise
 
-        session.messages.append(
-            {
-                "role": "assistant",
-                "content": answer,
-            }
-        )
+            session.messages.append(
+                {
+                    "role": "assistant",
+                    "content": answer,
+                }
+            )
+    finally:
+        reset_session_id(session_token)
 
     return ChatResponse(
         request_id=request.state.request_id,
