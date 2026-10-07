@@ -1,7 +1,9 @@
 from types import TracebackType
 from typing import Any, Self
 
-from mcp import Client, StdioServerParameters
+from mcp import Client, MCPError, StdioServerParameters
+
+from mcp_client.errors import MCPNotConnectedError
 
 
 class MCPClient:
@@ -42,7 +44,7 @@ class MCPClient:
 
     def _require_client(self) -> Client:
         if self._client is None:
-            raise RuntimeError(
+            raise MCPNotConnectedError(
                 "MCPClient is not connected. Use 'async with MCPClient() as client:'."
             )
 
@@ -54,6 +56,14 @@ class MCPClient:
         result = await client.list_tools()
 
         return result.tools
+
+    async def health(self) -> bool:
+        try:
+            await self.list_tools()
+        except MCPError:
+            return False
+
+        return True
 
     async def call_tool(
         self,

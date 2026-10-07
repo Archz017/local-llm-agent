@@ -3,6 +3,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from mcp.types import CallToolResult
+
 from agent.tool_parser import parse_tool_arguments
 from mcp_client.client import MCPClient
 
@@ -39,12 +41,22 @@ class ToolExecutor:
         start = time.perf_counter()
 
         async with self.semaphore:
-            result = await self.mcp.call_tool(
+            result: CallToolResult = await self.mcp.call_tool(
                 tool_name,
                 arguments,
             )
 
         duration_ms = (time.perf_counter() - start) * 1000
+
+        if result.is_error:
+            return ToolExecutionResult(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                result=result,
+                duration_ms=duration_ms,
+                error="MCP tool reported an execution error.",
+            )
 
         return ToolExecutionResult(
             tool_call_id=tool_call_id,

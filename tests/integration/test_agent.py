@@ -13,6 +13,13 @@ async def test_agent_calculator() -> None:
             mcp_client=mcp_client,
         )
 
-        response = await runtime.run("Use the calculator to multiply 12 by 13.")
+        messages = [
+            {
+                "role": "user",
+                "content": ("Use the calculator tool to multiply 12 by 13."),
+            }
+        ]
 
-    assert "156" in response
+        response = await runtime.run(messages)
+
+        assert "156" in response
