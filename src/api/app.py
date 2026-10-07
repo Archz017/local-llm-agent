@@ -4,7 +4,14 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
+from agent.errors import (
+    LLMError,
+    LLMTimeoutError,
+    MaxToolRoundsError,
+    ToolExecutionError,
+)
 from api.dependencies import ApplicationServices
 from api.schemas import ChatRequest, ChatResponse, CreateSessionResponse
 from observability.context import (
@@ -45,6 +52,28 @@ async def health() -> dict[str, str]:
     return {
         "status": "ok",
     }
+
+
+@app.get("/ready")
+async def ready(
+    request: Request,
+) -> JSONResponse:
+    services: ApplicationServices = request.app.state.services
+
+    dependencies = await services.readiness()
+
+    is_ready = all(dependencies.values())
+
+    return JSONResponse(
+        status_code=200 if is_ready else 503,
+        content={
+            "status": ("ready" if is_ready else "not_ready"),
+            "dependencies": {
+                name: ("ok" if available else "unavailable")
+                for name, available in dependencies.items()
+            },
+        },
+    )
 
 
 @app.middleware("http")
@@ -169,4 +198,64 @@ async def create_session(
 
     return CreateSessionResponse(
         session_id=session.session_id,
+    )
+
+
+@app.exception_handler(LLMTimeoutError)
+async def llm_timeout_handler(
+    request: Request,
+    exc: LLMTimeoutError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=504,
+        content={
+            "request_id": request.state.request_id,
+            "error": "llm_timeout",
+            "detail": str(exc),
+        },
+    )
+
+
+@app.exception_handler(LLMError)
+async def llm_error_handler(
+    request: Request,
+    exc: LLMError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={
+            "request_id": request.state.request_id,
+            "error": "llm_unavailable",
+            "detail": str(exc),
+        },
+    )
+
+
+@app.exception_handler(ToolExecutionError)
+async def tool_error_handler(
+    request: Request,
+    exc: ToolExecutionError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=502,
+        content={
+            "request_id": request.state.request_id,
+            "error": "tool_execution_failed",
+            "detail": str(exc),
+        },
+    )
+
+
+@app.exception_handler(MaxToolRoundsError)
+async def max_rounds_handler(
+    request: Request,
+    exc: MaxToolRoundsError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={
+            "request_id": request.state.request_id,
+            "error": "max_tool_rounds_exceeded",
+            "detail": str(exc),
+        },
     )

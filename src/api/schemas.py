@@ -18,3 +18,9 @@ class ChatResponse(BaseModel):
     request_id: str
     session_id: str
     response: str
+
+
+class ErrorResponse(BaseModel):
+    request_id: str
+    error: str
+    detail: str

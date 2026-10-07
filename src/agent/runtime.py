@@ -3,6 +3,7 @@ import logging
 import time
 from typing import Any
 
+from agent.errors import MaxToolRoundsError
 from agent.tool_adapter import mcp_tools_to_openai
 from agent.tool_executor import ToolExecutor
 from llm.client import LLMClient
@@ -123,20 +124,37 @@ class AgentRuntime:
                 execution_results = await self.executor.execute_sequential(tool_calls)
 
             for execution in execution_results:
-                logger.info(
-                    "Tool execution completed",
-                    extra={
-                        "event": "tool_completed",
-                        "tool_name": execution.tool_name,
-                        "tool_call_id": execution.tool_call_id,
-                        "duration_ms": round(
-                            execution.duration_ms,
-                            2,
-                        ),
-                    },
-                )
+                if execution.succeeded:
+                    logger.info(
+                        "Tool execution completed",
+                        extra={
+                            "event": "tool_completed",
+                            "tool_name": execution.tool_name,
+                            "tool_call_id": execution.tool_call_id,
+                            "duration_ms": round(
+                                execution.duration_ms,
+                                2,
+                            ),
+                        },
+                    )
 
-                tool_result = self._serialize_tool_result(execution.result)
+                    tool_result = self._serialize_tool_result(execution.result)
+
+                else:
+                    logger.warning(
+                        "Tool execution failed",
+                        extra={
+                            "event": "tool_failed",
+                            "tool_name": execution.tool_name,
+                            "tool_call_id": execution.tool_call_id,
+                            "duration_ms": round(
+                                execution.duration_ms,
+                                2,
+                            ),
+                        },
+                    )
+
+                    tool_result = f"Tool execution failed. Error: {execution.error}"
 
                 llm_messages.append(
                     {
@@ -146,7 +164,9 @@ class AgentRuntime:
                     }
                 )
 
-        raise RuntimeError(f"Maximum tool rounds ({self.max_tool_rounds}) exceeded.")
+        raise MaxToolRoundsError(
+            f"Maximum tool rounds ({self.max_tool_rounds}) exceeded."
+        )
 
     @staticmethod
     def _serialize_tool_result(result: Any) -> str:
